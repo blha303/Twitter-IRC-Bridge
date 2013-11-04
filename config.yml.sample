@@ -1,0 +1,7 @@
+host: irc.irccloud.com
+port: 6667
+nickserv: password
+oauth-token: ""
+oauth-secret: ""
+consumer-key: ""
+consumer-secret: ""

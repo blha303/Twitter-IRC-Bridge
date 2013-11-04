@@ -1,0 +1,4 @@
+config.yml
+twistd.*
+venv/
+lastid
