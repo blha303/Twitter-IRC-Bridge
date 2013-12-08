@@ -50,12 +50,12 @@ class TwitterProtocol(irc.IRCClient):
     except:
         with open('lastid', 'w') as f:
             print "Created lastid file"
-    try:
-        with open('lasttweet') as f:
-            lasttweet = f.read()
-    except:
-        with open('lasttweet', 'w') as f:
-            print "Created lasttweet file"
+#    try:
+#        with open('lasttweet') as f:
+#            lasttweet = json.loads(f.read())
+#    except:
+#        with open('lasttweet', 'w') as f:
+#            print "Created lasttweet file"
 
 
     def updateLastid(self, id):
@@ -64,34 +64,20 @@ class TwitterProtocol(irc.IRCClient):
             f.write(id)
 
 
-    def geturls(self, msg, s=""):
-        urls = msg.split("http" + s + "://t.co")
-        newtext = ""
-        for a in urls:
-            if a[0] == "/":
-                rest = ""
-                if len(a.split(" ")) > 1:
-                    rest = " ".join(a.split(" ")[1:])
-                url = "http" + s + "://t.co" + a.replace(rest, "")
-                response = urllib2.urlopen(HeadRequest(url)).url
-                newtext += response + rest
-            else:
-                newtext += a
-        return newtext
-
-
     def parsemsg(self, msg):
-        return self.geturls(self.geturls(msg), s="s")
+        for i in msg["entities"]["urls"]:
+            msg["text"] = msg["text"].replace(i["url"], i["expanded_url"])
+        return msg["text"]
 
 
     def updateLasttweet(self, tweet):
         print "in updateLasttweet"
         self.lasttweet = tweet
         print "set self.lasttweet"
-#        with open('lasttweet', 'w') as f:
-#            print "opened lasttweet"
-#            f.write(tweet)
-#            print "written lasttweet"
+        with open('lasttweet', 'w') as f:
+            print "opened lasttweet"
+            f.write(json.dumps(tweet))
+            print "written lasttweet"
 
 
     def signedOn(self):
@@ -120,25 +106,23 @@ class TwitterProtocol(irc.IRCClient):
                     since_id=self.lastid, count=5, exclude_replies=True)
             else:
                 timeline = t.statuses.user_timeline.irccloud(count=5,
-                                                             exclude_replies=True)
+                                                               exclude_replies=True)
             timeline.reverse()
             for i in timeline:
-                fmt = u"{text} https://twitter.com/IRCCloud/status/{id}"
+                fmt = u"{text} https://twitter.com/irccloud/status/{id}"
 #                username = i["user"]["screen_name"]
 #                timeago = ago.human(parse(i["created_at"]))
-                out = fmt.format(text=self.parsemsg(i["text"]),
+                out = fmt.format(text=self.parsemsg(i),
                                  id=i["id_str"])
                 print "Sending " + out
                 self._send_message(out.encode('utf-8'), self.channel)
                 self.updateLastid(i["id_str"])
-                self.updateLasttweet(i)
-            if not self.lasttweet:
-                print "self.lasttweet doesn't have content! fixing."
-                tweet = t.statuses.user_timeline.irccloud(count=1, exclude_replies=True)[0]
-                print tweet.keys()
-                self.updateLasttweet(tweet)
-            ratelimitstatus = t.application.rate_limit_status(resources="statuses")
-            self.ratelimitstatus = json.dumps(ratelimitstatus)
+#                self.updateLasttweet(i)
+#            if not self.lasttweet:
+#                print "self.lasttweet doesn't have content! fixing."
+#                tweet = t.statuses.user_timeline.irccloud(count=1, exclude_replies=True)[0]
+#                print tweet.keys()
+#                self.updateLasttweet(tweet)
             print "We're done here."
             print "----------"
         finally:
@@ -146,21 +130,21 @@ class TwitterProtocol(irc.IRCClient):
 
     def privmsg(self, user, channel, message):
         nick, _, host = user.partition('!')
-        if message == "!twitter":
+        if message == "!update" and nick == "blha303":
+            self.getNewTweets()
+        elif message == "!twitter":
             if self.lasttweet:
                 i = self.lasttweet
             else:
                 self._send_message("No last tweet available. Weird. blha303, what's going on?", self.channel)
                 return
-            fmt = u"{text} ({timeago}) https://twitter.com/IRCCloud/status/{id}"
+            fmt = u"{text} ({timeago}) https://twitter.com/irccloud/status/{id}"
             username = i["user"]["screen_name"]
             timeago = ago.human(parse(i["created_at"]))
             out = fmt.format(text=self.parsemsg(i["text"]),
                              timeago=timeago,
                              id=i["id_str"])
             self._send_message(out.encode('utf-8'), self.channel)
-        elif message == "!ratelimit" and nick == "blha303":
-            self._send_message(self.ratelimitstatus, nick)
 
 
     def _send_message(self, msg, target, nick=None):
@@ -174,7 +158,7 @@ class TwitterProtocol(irc.IRCClient):
 
 class TwitterFactory(protocol.ReconnectingClientFactory):
     protocol = TwitterProtocol
-    channels = ['#feedback']
+    channels = ['#twittertest']
 
 if __name__ == '__main__':
     reactor.connectTCP(HOST, PORT, TwitterFactory())
