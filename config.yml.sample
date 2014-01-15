@@ -1,7 +1,9 @@
-host: irc.irccloud.com
-port: 6667
-nickserv: password
-oauth-token: ""
-oauth-secret: ""
 consumer-key: ""
 consumer-secret: ""
+host: irc.freenode.net
+nickserv: ""
+nickname: b3TwitterTest
+oauth-secret: ""
+oauth-token: ""
+port: 6667
+twusers: {blha303: "#blha303", AmandaSwaggie‎: "#ohgodwhyplsno"}
