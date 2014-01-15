@@ -5,9 +5,9 @@ import json
 import random
 import unicodedata
 import yaml
-import ago
+from pprint import pprint
+from time import sleep
 from twitter import *
-from dateutil.parser import parse
 from twisted.internet import reactor, task, defer, protocol
 from twisted.python import log
 from twisted.words.protocols import irc
@@ -23,45 +23,27 @@ def munge(inp):
     return inp[0] + u"\u200b" + inp[1:]
 
 
-def localTzname():
-    offsetHour = time.timezone / 3600
-    return 'Etc/GMT%+d' % offsetHour
-
-
-class HeadRequest(urllib2.Request):
-        def get_method(self):
-            return "HEAD"
-
-
 class TwitterProtocol(irc.IRCClient):
-    nickname = 'Twitter'
+    nickname = config["nickname"]
     username = 'Twitter'
     versionName = 'Twitter'
-    versionNum = 'v1.1'
-    realname = 'https://github.com/blha303/IRCCloud-TwitterBridge'
+    versionNum = 'v1.5'
+    realname = 'https://github.com/blha303/Twitter-IRCBridge'
     loopcall = None
-    lastid = None
-    lasttweet = None
-    ratelimitstatus = None
-    channel = ""
+    lastid = {}
     try:
         with open('lastid') as f:
-            lastid = f.read()
+            lastid = json.loads(f.read())
     except:
         with open('lastid', 'w') as f:
+            f.write(json.dumps(lastid))
             print "Created lastid file"
-#    try:
-#        with open('lasttweet') as f:
-#            lasttweet = json.loads(f.read())
-#    except:
-#        with open('lasttweet', 'w') as f:
-#            print "Created lasttweet file"
 
 
-    def updateLastid(self, id):
-        self.lastid = id
+    def updateLastid(self, sn, id):
+        self.lastid[sn] = id
         with open('lastid', 'w') as f:
-            f.write(id)
+            f.write(json.dumps(self.lastid))
 
 
     def parsemsg(self, msg):
@@ -70,81 +52,87 @@ class TwitterProtocol(irc.IRCClient):
         return msg["text"]
 
 
-    def updateLasttweet(self, tweet):
-        print "in updateLasttweet"
-        self.lasttweet = tweet
-        print "set self.lasttweet"
-        with open('lasttweet', 'w') as f:
-            print "opened lasttweet"
-            f.write(json.dumps(tweet))
-            print "written lasttweet"
-
-
     def signedOn(self):
-        self.channel = self.factory.channels[0]
         for channel in self.factory.channels:
             self.join(channel)
-        self._send_message("identify " + config["nickserv"], "NickServ")
+        if config["nickserv"]:
+            self._send_message("identify " + config["nickserv"], "NickServ")
 
         def restartloop(reason):
             reason.printTraceback()
             print "Loop crashed: " + reason.getErrorMessage()
+            sleep(3)
             self.loopcall.start(60.0).addErrback(restartloop)
         self.loopcall = task.LoopingCall(self.getNewTweets)
         self.loopcall.start(60.0).addErrback(restartloop)
 
     def getNewTweets(self):
         print "Getting tweets."
-        try:
-            t = Twitter(auth=OAuth(config["oauth-token"],
-                                   config["oauth-secret"],
-                                   config["consumer-key"],
-                                   config["consumer-secret"]))
-            if self.lastid:
-                print "lastid: " + self.lastid
-                timeline = t.statuses.user_timeline.irccloud(
-                    since_id=self.lastid, count=5, exclude_replies=True)
+        t = Twitter(auth=OAuth(config["oauth-token"],
+                               config["oauth-secret"],
+                               config["consumer-key"],
+                               config["consumer-secret"]))
+        for sn in config["twusers"]:
+          print "Starting " + sn
+          try:
+            if sn in self.lastid:
+                print "[%s] lastid: %s" % (sn, self.lastid[sn])
+                timeline = t.statuses.user_timeline(screen_name=sn,
+                                                    since_id=self.lastid[sn],
+                                                    count=5,
+                                                    exclude_replies=True)
             else:
-                timeline = t.statuses.user_timeline.irccloud(count=5,
-                                                               exclude_replies=True)
+                timeline = t.statuses.user_timeline(screen_name=sn, count=5,
+                                                    exclude_replies=True)
             timeline.reverse()
             for i in timeline:
-                fmt = u"{text} https://twitter.com/irccloud/status/{id}"
-#                username = i["user"]["screen_name"]
-#                timeago = ago.human(parse(i["created_at"]))
+                fmt = u"\x02{screen_name}\x02: \x02{text}\x02 [ https://twitter.com/{screen_name}/status/{id} ]"
                 out = fmt.format(text=self.parsemsg(i),
+                                 screen_name=sn,
                                  id=i["id_str"])
                 print "Sending " + out
-                self._send_message(out.encode('utf-8'), self.channel)
-                self.updateLastid(i["id_str"])
-#                self.updateLasttweet(i)
-#            if not self.lasttweet:
-#                print "self.lasttweet doesn't have content! fixing."
-#                tweet = t.statuses.user_timeline.irccloud(count=1, exclude_replies=True)[0]
-#                print tweet.keys()
-#                self.updateLasttweet(tweet)
-            print "We're done here."
+                try:
+                    self._send_message(out.encode('utf-8'), config["twusers"][sn])
+                except:
+                    print "Couldn't send %s due to error"
+                self.updateLastid(sn, i["id_str"])
+          finally:
+            print "Done " + sn
             print "----------"
-        finally:
-            return
 
     def privmsg(self, user, channel, message):
         nick, _, host = user.partition('!')
-        if message == "!update" and nick == "blha303":
-            self.getNewTweets()
-        elif message == "!twitter":
-            if self.lasttweet:
-                i = self.lasttweet
+        try:
+            key = (key for key,value in config["twusers"].items() if value.lower()==channel.lower()).next()
+        except StopIteration:
+            key = None
+        split = message.split(" ")
+        if message == "!twitter":
+            if key:
+                self._send_message("https://twitter.com/" + key, channel)
             else:
-                self._send_message("No last tweet available. Weird. blha303, what's going on?", self.channel)
-                return
-            fmt = u"{text} ({timeago}) https://twitter.com/irccloud/status/{id}"
-            username = i["user"]["screen_name"]
-            timeago = ago.human(parse(i["created_at"]))
-            out = fmt.format(text=self.parsemsg(i["text"]),
-                             timeago=timeago,
-                             id=i["id_str"])
-            self._send_message(out.encode('utf-8'), self.channel)
+                self._send_message("I'm not set up for this channel.", channel)
+        elif split[0] == "!add" and nick == config["owner"]:
+            if len(split) != 3:
+                self._send_message("Usage: !add screenname #channel", channel)
+            else:
+                config["twusers"][split[1]] = split[2]
+                with open('config.yml', 'w') as f:
+                    f.write(yaml.dump(config))
+                self.join(split[2])
+                self._send_message("Hi! I'm here to relay messages from https://twitter.com/%s to this channel. Please ask blha303 if you have any questions or would like this bot removed." % split[1], split[2])
+                self._send_message("Done.", channel)
+        elif split[0] == "!del" and nick == config["owner"]:
+            if len(split) != 2:
+                self._send_message("Usage: !del #channel", channel)
+            else:
+                try:
+                    del config["twusers"][key]
+                    self.leave(split[1])
+                    with open('config.yml', 'w') as f:
+                        f.write(yaml.dump(config))
+                except StopIteration:
+                    self._send_message("I'm not set up for that channel.", channel)
 
 
     def _send_message(self, msg, target, nick=None):
@@ -158,7 +146,7 @@ class TwitterProtocol(irc.IRCClient):
 
 class TwitterFactory(protocol.ReconnectingClientFactory):
     protocol = TwitterProtocol
-    channels = ['#twittertest']
+    channels = config["twusers"].values()
 
 if __name__ == '__main__':
     reactor.connectTCP(HOST, PORT, TwitterFactory())
