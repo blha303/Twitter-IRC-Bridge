@@ -1,5 +1,17 @@
 Twitter-IRC-Bridge
 =================
+
+Usage
+-----
+
+* Passively posts tweets from a twitter account
+* !twitter posts the twitter url associated with a channel
+* !add <screenname> <#channel> adds a channel association
+* !del <#channel> deletes the channel association
+* Please set the owner var to the nickname of the bot's owner to add channel associations.
+
+Installation
+------------
  
 * Get Virtualenv
 * Use `virtualenv venv -p python2.7`
