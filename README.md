@@ -12,7 +12,8 @@ Usage
 
 Installation
 ------------
- 
+
+* Get the latest release from [here](https://github.com/blha303/Twitter-IRC-Bridge/releases)
 * Get Virtualenv
 * Use `virtualenv venv -p python2.7`
 * Use `venv/bin/pip install -r requirements.txt`
