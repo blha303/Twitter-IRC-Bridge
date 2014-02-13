@@ -1,21 +1,17 @@
 import sys
-import re
-import urllib2
 import json
-import random
-import unicodedata
-import yaml
-from pprint import pprint
 from time import sleep
+
+import yaml
 from twitter import *
-from twisted.internet import reactor, task, defer, protocol
+from twisted.internet import reactor, task, protocol
 from twisted.python import log
 from twisted.words.protocols import irc
-from twisted.web.client import getPage
 from twisted.application import internet, service
 
-with open('config.yml') as f:
-    config = yaml.load(f.read())
+
+with open('config.yml') as configf:
+    config = yaml.load(configf.read())
 HOST, PORT = config['host'], config['port']
 
 
@@ -23,34 +19,34 @@ def munge(inp):
     return inp[0] + u"\u200b" + inp[1:]
 
 
+def parsemsg(msg):
+    for i in msg["entities"]["urls"]:
+        msg["text"] = msg["text"].replace(i["url"], i["expanded_url"])
+    return msg["text"]
+
+
 class TwitterProtocol(irc.IRCClient):
     nickname = config["nickname"]
     username = 'Twitter'
     versionName = 'Twitter'
-    versionNum = 'v1.5'
+    versionNum = 'v1.6'
     realname = 'https://github.com/blha303/Twitter-IRCBridge'
     loopcall = None
-    lastid = {}
-    try:
-        with open('lastid') as f:
-            lastid = json.loads(f.read())
-    except:
-        with open('lastid', 'w') as f:
-            f.write(json.dumps(lastid))
-            print "Created lastid file"
 
+    def __init__(self):
+        self.lastid = {}
+        try:
+            with open('lastid') as f:
+                self.lastid = json.loads(f.read())
+        except (IOError, ValueError):
+            with open('lastid', 'w') as f:
+                f.write(json.dumps(self.lastid))
+                print "Created lastid file"
 
-    def updateLastid(self, sn, id):
-        self.lastid[sn] = id
+    def updatelastid(self, sn, lid):
+        self.lastid[sn] = lid
         with open('lastid', 'w') as f:
             f.write(json.dumps(self.lastid))
-
-
-    def parsemsg(self, msg):
-        for i in msg["entities"]["urls"]:
-            msg["text"] = msg["text"].replace(i["url"], i["expanded_url"])
-        return msg["text"]
-
 
     def signedOn(self):
         for channel in self.factory.channels:
@@ -63,47 +59,47 @@ class TwitterProtocol(irc.IRCClient):
             print "Loop crashed: " + reason.getErrorMessage()
             sleep(3)
             self.loopcall.start(60.0).addErrback(restartloop)
-        self.loopcall = task.LoopingCall(self.getNewTweets)
+        self.loopcall = task.LoopingCall(self.getnewtweets)
         self.loopcall.start(60.0).addErrback(restartloop)
 
-    def getNewTweets(self):
+    def getnewtweets(self):
         print "Getting tweets."
         t = Twitter(auth=OAuth(config["oauth-token"],
                                config["oauth-secret"],
                                config["consumer-key"],
                                config["consumer-secret"]))
         for sn in config["twusers"]:
-          print "Starting " + sn
-          try:
-            if sn in self.lastid:
-                print "[%s] lastid: %s" % (sn, self.lastid[sn])
-                timeline = t.statuses.user_timeline(screen_name=sn,
-                                                    since_id=self.lastid[sn],
-                                                    count=5,
-                                                    exclude_replies=True)
-            else:
-                timeline = t.statuses.user_timeline(screen_name=sn, count=5,
-                                                    exclude_replies=True)
-            timeline.reverse()
-            for i in timeline:
-                fmt = u"\x02{screen_name}\x02: \x02{text}\x02 [ https://twitter.com/{screen_name}/status/{id} ]"
-                out = fmt.format(text=self.parsemsg(i),
-                                 screen_name=sn,
-                                 id=i["id_str"])
-                print "Sending " + out
-                try:
-                    self._send_message(out.encode('utf-8'), config["twusers"][sn])
-                except:
-                    print "Couldn't send %s due to error"
-                self.updateLastid(sn, i["id_str"])
-          finally:
-            print "Done " + sn
-            print "----------"
+            print "Starting " + sn
+            try:
+                if sn in self.lastid:
+                    print "[%s] lastid: %s" % (sn, self.lastid[sn])
+                    timeline = t.statuses.user_timeline(screen_name=sn,
+                                                        since_id=self.lastid[sn],
+                                                        count=5,
+                                                        exclude_replies=True)
+                else:
+                    timeline = t.statuses.user_timeline(screen_name=sn, count=5,
+                                                        exclude_replies=True)
+                timeline.reverse()
+                for i in timeline:
+                    fmt = u"\x02{screen_name}\x02: \x02{text}\x02 [ https://twitter.com/{screen_name}/status/{id} ]"
+                    out = fmt.format(text=parsemsg(i),
+                                     screen_name=sn,
+                                     id=i["id_str"])
+                    print "Sending " + out
+                    try:
+                        self._send_message(out.encode('utf-8'), config["twusers"][sn])
+                    except UnicodeError:
+                        print "Couldn't send %s due to error"
+                    self.updatelastid(sn, i["id_str"])
+            finally:
+                print "Done " + sn
+                print "----------"
 
     def privmsg(self, user, channel, message):
         nick, _, host = user.partition('!')
         try:
-            key = (key for key,value in config["twusers"].items() if value.lower()==channel.lower()).next()
+            key = (key for key, value in config["twusers"].items() if value.lower() == channel.lower()).next()
         except StopIteration:
             key = None
         split = message.split(" ")
@@ -120,7 +116,9 @@ class TwitterProtocol(irc.IRCClient):
                 with open('config.yml', 'w') as f:
                     f.write(yaml.dump(config))
                 self.join(split[2])
-                self._send_message("Hi! I'm here to relay messages from https://twitter.com/%s to this channel. Please ask blha303 if you have any questions or would like this bot removed." % split[1], split[2])
+                self._send_message("Hi! I'm here to relay messages from https://twitter.com/%s to this "
+                                   "channel. Please ask %s if you have any questions or would like"
+                                   "this bot removed." % (config["owner"], split[1]), split[2])
                 self._send_message("Done.", channel)
         elif split[0] == "!del" and nick == config["owner"]:
             if len(split) != 2:
@@ -134,13 +132,13 @@ class TwitterProtocol(irc.IRCClient):
                 except StopIteration:
                     self._send_message("I'm not set up for that channel.", channel)
 
-
     def _send_message(self, msg, target, nick=None):
         if nick:
             msg = '%s, %s' % (nick, msg)
         self.msg(target, msg)
 
-    def _show_error(self, failure):
+    @staticmethod
+    def _show_error(failure):
         return failure.getErrorMessage()
 
 
