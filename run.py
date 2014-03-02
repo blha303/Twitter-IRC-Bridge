@@ -80,6 +80,7 @@ class TwitterProtocol(irc.IRCClient):
                 else:
                     timeline = t.statuses.user_timeline(screen_name=sn, count=5,
                                                         exclude_replies=True)
+                print "Rate limit remaining: %s" % timeline.headers.getheader('x-rate-limit-remaining')
                 timeline.reverse()
                 for i in timeline:
                     fmt = u"\x02{screen_name}\x02: \x02{text}\x02 [ https://twitter.com/{screen_name}/status/{id} ]"
