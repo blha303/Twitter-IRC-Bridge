@@ -1,6 +1,8 @@
 Twitter-IRC-Bridge
 =================
 
+**Want to get the bot to follow a list? Try [blha303/Twitter-IRC-lists](https://github.com/blha303/Twitter-IRC-lists)**
+
 Usage
 -----
 
