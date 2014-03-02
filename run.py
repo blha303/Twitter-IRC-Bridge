@@ -85,7 +85,7 @@ class TwitterProtocol(irc.IRCClient):
                 for i in timeline:
                     fmt = u"\x02{screen_name}\x02: \x02{text}\x02 [ https://twitter.com/{screen_name}/status/{id} ]"
                     out = fmt.format(text=parsemsg(i),
-                                     screen_name=sn,
+                                     screen_name=i["user"]["screen_name"],
                                      id=i["id_str"])
                     print "Sending " + out
                     try:
