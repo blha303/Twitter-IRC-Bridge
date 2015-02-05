@@ -1,5 +1,5 @@
 PyYAML==3.10
-Twisted==13.1.0
+Twisted==15.0.0
 python-dateutil==2.2
 pytz==2013.7
 six==1.4.1
