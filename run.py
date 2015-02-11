@@ -83,8 +83,8 @@ class TwitterProtocol(irc.IRCClient):
                 print "Rate limit remaining: %s" % timeline.headers.getheader('x-rate-limit-remaining')
                 timeline.reverse()
                 for i in timeline:
-                    fmt = u"\x02{screen_name}\x02: \x02{text}\x02 [ https://twitter.com/{screen_name}/status/{id} ]"
-                    out = fmt.format(text=parsemsg(i),
+                    fmt = u"\x02{screen_name}\x02: {text} [ https://twitter.com/{screen_name}/status/{id} ]"
+                    out = fmt.format(text="\n".join("\x02{}\x02".format(a) for a in parsemsg(i).split("\n")),
                                      screen_name=i["user"]["screen_name"],
                                      id=i["id_str"])
                     print "Sending " + out
